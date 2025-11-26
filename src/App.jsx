@@ -242,23 +242,97 @@ function Profile({currentUser}) {
   )
 }
 
-function Forum() {
+function Forum({currentUser}) {
+  const [messages, setMessages] = useState(() => JSON.parse(localStorage.getItem('forumMessages')) || []);
+  const [texte, setTexte] = useState("");
+  const [editIndex, setEditIndex] = useState(null);
+  const [message, setMessage] = useState("");
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!texte.trim()) {
+      setMessage('Le message ne peut pas être vide.');
+      return;
+    }
+    if (!currentUser) {
+      setMessage('Vous devez être connecté pour poster.');
+      return;
+    }
+    let newMessages = [...messages];
+    const msgObj = {
+      texte,
+      auteur: currentUser.nom,
+      type: currentUser.type,
+      date: new Date().toISOString()
+    };
+    if (editIndex !== null) {
+      // Seul l'auteur peut éditer
+      if (messages[editIndex].auteur !== currentUser.nom) {
+        setMessage('Vous ne pouvez modifier que vos propres messages.');
+        return;
+      }
+      newMessages[editIndex] = msgObj;
+      setEditIndex(null);
+      setMessage('Message modifié.');
+    } else {
+      newMessages.push(msgObj);
+      setMessage('Message ajouté.');
+    }
+    setMessages(newMessages);
+    localStorage.setItem('forumMessages', JSON.stringify(newMessages));
+    setTexte("");
+  }
+
+  function handleEdit(idx) {
+    if (messages[idx].auteur !== currentUser.nom) {
+      setMessage('Vous ne pouvez modifier que vos propres messages.');
+      return;
+    }
+    setTexte(messages[idx].texte);
+    setEditIndex(idx);
+  }
+
+  function handleDelete(idx) {
+    if (messages[idx].auteur !== currentUser.nom) {
+      setMessage('Vous ne pouvez supprimer que vos propres messages.');
+      return;
+    }
+    if (!window.confirm('Confirmer la suppression de ce message ?')) return;
+    const newMessages = messages.filter((_, i) => i !== idx);
+    setMessages(newMessages);
+    localStorage.setItem('forumMessages', JSON.stringify(newMessages));
+    setMessage('Message supprimé.');
+    setTexte("");
+    setEditIndex(null);
+  }
+
   return (
-    <div>
-      <h2 style={{color:'#0057b7'}}>Forum</h2>
-      <section style={{background:'#fff', borderRadius:'8px', padding:'1em', border:'2px solid #ff7900'}}>
-        <h3 style={{color:'#ff7900'}}>Discussions récentes</h3>
-        <ul>
-          <li>Comment bien préparer sa soutenance ?</li>
-          <li>Idées de projets innovants</li>
-        </ul>
+    <div style={{maxWidth:'700px', margin:'2em auto'}}>
+      <h2 style={{color:'#0057b7'}}>Forum ENSPD</h2>
+      <section style={{background:'#fff', borderRadius:'8px', padding:'1em', border:'2px solid #ff7900', marginBottom:'2em'}}>
+        <form onSubmit={handleSubmit}>
+          <textarea value={texte} onChange={e=>setTexte(e.target.value)} style={{width:'100%', marginBottom:'1em'}} rows={3} placeholder="Votre message..." required /><br/>
+          <button type="submit" style={{background:'#0057b7', color:'#fff', border:'none', borderRadius:'4px', padding:'0.5em 1em'}}>{editIndex !== null ? 'Modifier' : 'Poster'}</button>
+          {message && <div style={{marginTop:'1em', color:'#0057b7'}}>{message}</div>}
+        </form>
       </section>
-      <form style={{marginTop:'1em'}}>
-        <input type="text" placeholder="Votre question..." style={{width:'70%', marginRight:'1em'}} />
-        <button type="submit" style={{background:'#0057b7', color:'#fff', border:'none', padding:'0.5em 1em', borderRadius:'4px'}}>Poster</button>
-      </form>
+      <h3 style={{color:'#ff7900'}}>Fil de discussion</h3>
+      <ul>
+        {messages.length === 0 ? <div style={{color:'#999'}}>Aucun message pour l'instant.</div> : messages.map((msg, idx) => (
+          <li key={idx} style={{marginBottom:'1em', background:'#f9f9f9', padding:'1em', borderRadius:'6px', border:'1px solid #eee'}}>
+            <span style={{fontWeight:'bold', color:'#0057b7'}}>{msg.auteur} ({msg.type})</span> <span style={{fontSize:'0.9em', color:'#999'}}>{new Date(msg.date).toLocaleString()}</span><br/>
+            <span style={{fontSize:'1em', color:'#333'}}>{msg.texte}</span><br/>
+            {currentUser && msg.auteur === currentUser.nom && (
+              <>
+                <button onClick={()=>handleEdit(idx)} style={{marginRight:'1em', background:'#0057b7', color:'#fff', border:'none', borderRadius:'4px', padding:'0.3em 0.8em'}}>Modifier</button>
+                <button onClick={()=>handleDelete(idx)} style={{background:'#ff7900', color:'#fff', border:'none', borderRadius:'4px', padding:'0.3em 0.8em'}}>Supprimer</button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
-  )
+  );
 }
 
 function Register() {
@@ -272,6 +346,8 @@ function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState('');
   const navigate = useNavigate();
+
+  const fieldStyle = {width:'100%', fontSize:'1.1em', padding:'0.7em', boxSizing:'border-box'};
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -293,64 +369,66 @@ function Register() {
   }
 
   return (
-    <div style={{display:'flex', flexDirection:'column', alignItems:'center', marginTop:'2em'}}>
+    <div style={{maxWidth:'420px', margin:'2em auto', background:'#fff', borderRadius:'12px', padding:'2em', border:'2px solid #0057b7'}}>
       <h2 style={{color:'#0057b7'}}>Inscription</h2>
-      <form style={{background:'#fff', borderRadius:'12px', padding:'2em', border:'2px solid #0057b7', maxWidth:'400px', width:'100%', boxShadow:'0 2px 12px #0057b733'}} onSubmit={handleSubmit}>
-        <div style={{marginBottom:'1em'}}>
-          <label>Type de compte</label><br/>
-          <select value={type} onChange={e => setType(e.target.value)} style={{width:'100%'}}>
+      <form onSubmit={handleSubmit}>
+        <div style={{marginBottom:'1.2em'}}>
+          <label>Type d'utilisateur</label><br/>
+          <select style={fieldStyle} value={type} onChange={e => setType(e.target.value)}>
             <option value="etudiant">Étudiant</option>
             <option value="enseignant">Enseignant</option>
           </select>
         </div>
-        <div style={{marginBottom:'1em'}}>
-          <label>Nom</label><br/>
-          <input type="text" style={{width:'100%'}} required value={nom} onChange={e => setNom(e.target.value)} />
-        </div>
         {type === 'etudiant' && (
           <>
-            <div style={{marginBottom:'1em'}}>
-              <label>Matricule</label><br/>
-              <input type="text" style={{width:'100%'}} required value={matricule} onChange={e => setMatricule(e.target.value)} />
+            <div style={{marginBottom:'1.2em'}}>
+              <label>Nom</label><br/>
+              <input type="text" style={fieldStyle} required value={nom} onChange={e => setNom(e.target.value)} />
             </div>
-            <div style={{marginBottom:'1em'}}>
+            <div style={{marginBottom:'1.2em'}}>
+              <label>Matricule</label><br/>
+              <input type="text" style={fieldStyle} required value={matricule} onChange={e => setMatricule(e.target.value)} />
+            </div>
+            <div style={{marginBottom:'1.2em'}}>
               <label>Filière</label><br/>
-              <select style={{width:'100%'}} value={filiere} onChange={e => setFiliere(e.target.value)}>
+              <select style={fieldStyle} value={filiere} onChange={e => setFiliere(e.target.value)}>
                 {FILIERES.map(f => <option key={f} value={f}>{f}</option>)}
               </select>
             </div>
-            <div style={{marginBottom:'1em'}}>
+            <div style={{marginBottom:'1.2em'}}>
               <label>Mention obtenue lors de la soutenance</label><br/>
-              <input type="text" style={{width:'100%'}} required value={mention} onChange={e => setMention(e.target.value)} />
+              <input type="text" style={fieldStyle} required value={mention} onChange={e => setMention(e.target.value)} />
             </div>
           </>
         )}
-        <div style={{marginBottom:'1em'}}>
+        <div style={{marginBottom:'1.2em'}}>
           <label>Email</label><br/>
-          <input type="email" style={{width:'100%'}} required value={email} onChange={e => setEmail(e.target.value)} />
+          <input type="email" style={fieldStyle} required value={email} onChange={e => setEmail(e.target.value)} />
         </div>
-        <div style={{marginBottom:'1em'}}>
+        <div style={{marginBottom:'1.2em'}}>
           <label>Mot de passe</label><br/>
           <div style={{position:'relative'}}>
-            <input type={showPassword ? 'text' : 'password'} style={{width:'100%'}} required value={password} onChange={e => setPassword(e.target.value)} />
-            <button type="button" onClick={()=>setShowPassword(v=>!v)} style={{position:'absolute', right:'8px', top:'8px', background:'none', border:'none', cursor:'pointer'}}>
+            <input type={showPassword ? 'text' : 'password'} style={{...fieldStyle, paddingRight:'2.5em'}} required value={password} onChange={e => setPassword(e.target.value)} />
+            <button type="button" onClick={()=>setShowPassword(v=>!v)} style={{position:'absolute', right:'8px', top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:'1.3em'}}>
               {showPassword ? '🙈' : '👁️'}
             </button>
           </div>
         </div>
-        <button type="submit" style={{background:'#ff7900', color:'#fff', border:'none', padding:'0.5em 1em', borderRadius:'4px', width:'100%'}}>S'inscrire</button>
+        <button type="submit" style={{background:'#ff7900', color:'#fff', border:'none', padding:'0.7em 1.2em', borderRadius:'4px', width:'100%', fontSize:'1.1em'}}>S'inscrire</button>
         {message && <div style={{marginTop:'1em', color:'#0057b7'}}>{message}</div>}
       </form>
     </div>
   )
 }
 
-function Login({setCurrentUser}) {
+function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState('');
   const navigate = useNavigate();
+
+  const fieldStyle = {width:'100%', fontSize:'1.1em', padding:'0.7em', boxSizing:'border-box'};
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -360,33 +438,36 @@ function Login({setCurrentUser}) {
       setMessage('Identifiants incorrects.');
       return;
     }
-    setCurrentUser(user);
+    localStorage.setItem('currentUser', JSON.stringify(user));
     setMessage('Connexion réussie !');
-    setTimeout(() => navigate('/'), 1200);
+    setTimeout(() => navigate('/'), 1000);
   }
 
   return (
-    <div style={{display:'flex', flexDirection:'column', alignItems:'center', marginTop:'2em'}}>
-      <h2 style={{color:'#0057b7'}}>Connexion</h2>
-      <form style={{background:'#fff', borderRadius:'12px', padding:'2em', border:'2px solid #0057b7', maxWidth:'400px', width:'100%', boxShadow:'0 2px 12px #0057b733'}} onSubmit={handleSubmit}>
-        <div style={{marginBottom:'1em'}}>
+    <div style={{maxWidth:'420px', margin:'2em auto', background:'#fff', borderRadius:'12px', padding:'2em', border:'2px solid #0057b7'}}>
+      <h2 style={{color:'#0057b7', textAlign:'center'}}>Connexion</h2>
+      <form onSubmit={handleSubmit}>
+        <div style={{marginBottom:'1.2em'}}>
           <label>Email</label><br/>
-          <input type="email" style={{width:'100%'}} required value={email} onChange={e => setEmail(e.target.value)} />
+          <input type="email" style={fieldStyle} required value={email} onChange={e => setEmail(e.target.value)} />
         </div>
-        <div style={{marginBottom:'1em'}}>
+        <div style={{marginBottom:'1.2em'}}>
           <label>Mot de passe</label><br/>
           <div style={{position:'relative'}}>
-            <input type={showPassword ? 'text' : 'password'} style={{width:'100%'}} required value={password} onChange={e => setPassword(e.target.value)} />
-            <button type="button" onClick={()=>setShowPassword(v=>!v)} style={{position:'absolute', right:'8px', top:'8px', background:'none', border:'none', cursor:'pointer'}}>
-              {showPassword ? '🙈' : '👁️'}
+            <input type={showPassword ? 'text' : 'password'} style={{...fieldStyle, paddingRight:'2.5em'}} required value={password} onChange={e => setPassword(e.target.value)} />
+            <button type="button" onClick={()=>setShowPassword(v=>!v)} style={{position:'absolute', right:'8px', top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:'1.3em'}}>
+              <span role="img" aria-label="Voir mot de passe">{showPassword ? '🙈' : '👁️'}</span>
             </button>
           </div>
         </div>
-        <button type="submit" style={{background:'#0057b7', color:'#fff', border:'none', padding:'0.5em 1em', borderRadius:'4px', width:'100%'}}>Se connecter</button>
-        {message && <div style={{marginTop:'1em', color:'#0057b7'}}>{message}</div>}
+        <button type="submit" style={{background:'#0057b7', color:'#fff', border:'none', padding:'0.7em 1.2em', borderRadius:'4px', width:'100%', fontSize:'1.1em'}}>Se connecter</button>
+        {message && <div style={{marginTop:'1em', color:'#ff7900', textAlign:'center'}}>{message}</div>}
       </form>
+      <div style={{marginTop:'1em', textAlign:'center'}}>
+        <Link to="/reset-password" style={{color:'#ff7900', textDecoration:'none'}}>Mot de passe oublié ?</Link>
+      </div>
     </div>
-  )
+  );
 }
 
 function App() {
@@ -423,10 +504,11 @@ function App() {
         <Route path="/submit" element={<SubmitProject currentUser={currentUser} />} />
         <Route path="/evaluation" element={<Evaluation currentUser={currentUser} />} />
         <Route path="/profile" element={<Profile currentUser={currentUser} />} />
-        <Route path="/forum" element={<Forum />} />
+        <Route path="/forum" element={<Forum currentUser={currentUser} />} />
         <Route path="/evenements" element={<GestionEvenements currentUser={currentUser} />} />
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<Login setCurrentUser={setCurrentUser} />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
       </Routes>
     </>
   )
@@ -438,6 +520,8 @@ function GestionEvenements({currentUser}) {
   const [evenements, setEvenements] = useState(() => JSON.parse(localStorage.getItem('evenements')) || []);
   const [titre, setTitre] = useState("");
   const [date, setDate] = useState("");
+  const [lieu, setLieu] = useState("");
+  const [description, setDescription] = useState("");
   const [editIndex, setEditIndex] = useState(null);
   const [message, setMessage] = useState("");
 
@@ -448,38 +532,46 @@ function GestionEvenements({currentUser}) {
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (!titre || !date) {
+    if (!titre || !date || !lieu || !description) {
       setMessage('Veuillez remplir tous les champs.');
       return;
     }
     let newEvenements = [...evenements];
+    const eventObj = { titre, date, lieu, description };
     if (editIndex !== null) {
-      newEvenements[editIndex] = { titre, date };
+      newEvenements[editIndex] = eventObj;
       setEditIndex(null);
       setMessage('Événement modifié.');
     } else {
-      newEvenements.push({ titre, date });
+      newEvenements.push(eventObj);
       setMessage('Événement ajouté.');
     }
     setEvenements(newEvenements);
     localStorage.setItem('evenements', JSON.stringify(newEvenements));
     setTitre("");
     setDate("");
+    setLieu("");
+    setDescription("");
   }
 
   function handleEdit(idx) {
     setTitre(evenements[idx].titre);
     setDate(evenements[idx].date);
+    setLieu(evenements[idx].lieu);
+    setDescription(evenements[idx].description);
     setEditIndex(idx);
   }
 
   function handleDelete(idx) {
+    if (!window.confirm('Confirmer la suppression de cet événement ?')) return;
     const newEvenements = evenements.filter((_, i) => i !== idx);
     setEvenements(newEvenements);
     localStorage.setItem('evenements', JSON.stringify(newEvenements));
     setMessage('Événement supprimé.');
     setTitre("");
     setDate("");
+    setLieu("");
+    setDescription("");
     setEditIndex(null);
   }
 
@@ -491,6 +583,10 @@ function GestionEvenements({currentUser}) {
         <input type="text" value={titre} onChange={e=>setTitre(e.target.value)} style={{width:'100%', marginBottom:'1em'}} required /><br/>
         <label>Date :</label><br/>
         <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{width:'100%', marginBottom:'1em'}} required /><br/>
+        <label>Lieu :</label><br/>
+        <input type="text" value={lieu} onChange={e=>setLieu(e.target.value)} style={{width:'100%', marginBottom:'1em'}} required /><br/>
+        <label>Description :</label><br/>
+        <textarea value={description} onChange={e=>setDescription(e.target.value)} style={{width:'100%', marginBottom:'1em'}} required /><br/>
         <button type="submit" style={{background:'#ff7900', color:'#fff', border:'none', borderRadius:'4px', padding:'0.5em 1em'}}>{editIndex !== null ? 'Modifier' : 'Ajouter'}</button>
         {message && <div style={{marginTop:'1em', color:'#0057b7'}}>{message}</div>}
       </form>
@@ -499,11 +595,58 @@ function GestionEvenements({currentUser}) {
         {evenements.length === 0 ? <div style={{color:'#999'}}>Aucun événement pour l'instant.</div> : evenements.map((ev, idx) => (
           <li key={idx} style={{marginBottom:'1em', background:'#f9f9f9', padding:'1em', borderRadius:'6px', border:'1px solid #eee'}}>
             <b>{ev.titre}</b> <span style={{color:'#0057b7'}}>{ev.date}</span><br/>
+            <span style={{fontSize:'0.95em', color:'#333'}}><b>Lieu :</b> {ev.lieu}</span><br/>
+            <span style={{fontSize:'0.95em', color:'#333'}}><b>Description :</b> {ev.description}</span><br/>
             <button onClick={()=>handleEdit(idx)} style={{marginRight:'1em', background:'#0057b7', color:'#fff', border:'none', borderRadius:'4px', padding:'0.3em 0.8em'}}>Modifier</button>
             <button onClick={()=>handleDelete(idx)} style={{background:'#ff7900', color:'#fff', border:'none', borderRadius:'4px', padding:'0.3em 0.8em'}}>Supprimer</button>
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function ResetPassword() {
+  const [email, setEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [message, setMessage] = useState("");
+  const navigate = useNavigate();
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    const idx = users.findIndex(u => u.email === email);
+    if (idx === -1) {
+      setMessage("Aucun utilisateur trouvé avec cet email.");
+      return;
+    }
+    users[idx].password = newPassword;
+    localStorage.setItem('users', JSON.stringify(users));
+    setMessage("Mot de passe réinitialisé ! Vous pouvez vous connecter.");
+    setTimeout(() => navigate('/login'), 1500);
+  }
+
+  return (
+    <div style={{maxWidth:'420px', margin:'2em auto', background:'#fff', borderRadius:'12px', padding:'2em', border:'2px solid #0057b7'}}>
+      <h2 style={{color:'#0057b7'}}>Réinitialisation du mot de passe</h2>
+      <form onSubmit={handleSubmit}>
+        <div style={{marginBottom:'1.2em'}}>
+          <label>Email</label><br/>
+          <input type="email" style={{width:'100%', fontSize:'1.1em', padding:'0.7em'}} required value={email} onChange={e => setEmail(e.target.value)} />
+        </div>
+        <div style={{marginBottom:'1.2em'}}>
+          <label>Nouveau mot de passe</label><br/>
+          <div style={{position:'relative'}}>
+            <input type={showPassword ? 'text' : 'password'} style={{width:'100%', fontSize:'1.1em', padding:'0.7em', paddingRight:'2.5em'}} required value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+            <button type="button" onClick={()=>setShowPassword(v=>!v)} style={{position:'absolute', right:'8px', top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:'1.3em'}}>
+              {showPassword ? '🙈' : '👁️'}
+            </button>
+          </div>
+        </div>
+        <button type="submit" style={{background:'#ff7900', color:'#fff', border:'none', padding:'0.7em 1.2em', borderRadius:'4px', width:'100%', fontSize:'1.1em'}}>Réinitialiser</button>
+        {message && <div style={{marginTop:'1em', color:'#0057b7'}}>{message}</div>}
+      </form>
     </div>
   );
 }
