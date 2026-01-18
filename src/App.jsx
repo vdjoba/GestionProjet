@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Routes, Route, Link, useNavigate } from 'react-router-dom'
 import './App.css'
+const API = 'http://localhost:4000'
 
 const FILIERES = [
   'Génie Civil',
@@ -63,14 +64,17 @@ const FILIERES = [
 // }
 
 function Dashboard({currentUser}) {
+  const [projets, setProjets] = useState([])
   if (!currentUser) {
     return <div style={{color:'#ff7900', textAlign:'center', marginTop:'2em'}}>Veuillez vous connecter pour accéder à cette page.</div>;
   }
-  if (currentUser.type !== 'étudiant') {
+  if (currentUser.type !== 'etudiant') {
     return <div style={{color:'#ff7900', textAlign:'center', marginTop:'2em'}}>Accès réservé aux étudiants.</div>;
   }
-  // Récupérer les projets soumis par l'étudiant connecté
-  const projets = (JSON.parse(localStorage.getItem('projets')) || []).filter(p => p.auteur === currentUser.nom && p.filiere === currentUser.filiere);
+  useEffect(() => {
+    const q = new URLSearchParams({ filiere: currentUser.filiere, auteur: currentUser.nom }).toString()
+    fetch(`${API}/api/projects?${q}`).then(r=>r.json()).then(setProjets).catch(()=>setProjets([]))
+  }, [currentUser])
   return (
     <div>
       <h2 style={{color:'#0057b7'}}>Tableau de bord étudiant</h2>
@@ -108,10 +112,8 @@ function SubmitProject({currentUser}) {
     let fichierNom = "";
     if (fichier) {
       fichierNom = fichier.name;
-      // Pour une vraie appli, il faudrait uploader le fichier sur un serveur
-      // Ici, on ne fait que stocker le nom pour la démo
     }
-    const projet = {
+    const body = {
       titre,
       description,
       fichier: fichierNom,
@@ -120,14 +122,17 @@ function SubmitProject({currentUser}) {
       auteur: currentUser ? currentUser.nom : '',
       date: new Date().toISOString()
     };
-    const projets = JSON.parse(localStorage.getItem('projets')) || [];
-    projets.push(projet);
-    localStorage.setItem('projets', JSON.stringify(projets));
-    setTitre("");
-    setDescription("");
-    setFichier(null);
-    setLien("");
-    navigate('/');
+    fetch(`${API}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(r=>r.ok?r.json():Promise.reject()).then(()=>{
+      setTitre("");
+      setDescription("");
+      setFichier(null);
+      setLien("");
+      navigate('/');
+    }).catch(()=>{})
   }
 
   return (
@@ -151,14 +156,15 @@ function SubmitProject({currentUser}) {
 }
 
 function Home() {
-  const projets = JSON.parse(localStorage.getItem('projets')) || [];
-  const projetsParFiliere = {};
-  FILIERES.forEach(filiere => {
-    projetsParFiliere[filiere] = projets
-      .filter(p => p.filiere === filiere)
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
-      .slice(0, 5);
-  });
+  const [projetsParFiliere, setProjetsParFiliere] = useState({})
+  const [events, setEvents] = useState([])
+  useEffect(() => {
+    const q = new URLSearchParams({ filieres: FILIERES.join(',') }).toString()
+    fetch(`${API}/api/projects/latest?${q}`).then(r=>r.json()).then(setProjetsParFiliere).catch(()=>setProjetsParFiliere({}))
+  }, [])
+  useEffect(() => {
+    fetch(`${API}/api/events`).then(r=>r.json()).then(setEvents).catch(()=>setEvents([]))
+  }, [])
 
   return (
     <div style={{textAlign:'center'}}>
@@ -172,10 +178,10 @@ function Home() {
             <div key={filiere} style={{background:'#e6f0ff', borderRadius:'8px', padding:'1em', border:'1px solid #ff7900'}}>
               <h3 style={{color:'#ff7900', marginBottom:'0.5em'}}>{filiere}</h3>
               <ul style={{textAlign:'left'}}>
-                {projetsParFiliere[filiere].length === 0 ? (
+                {(!projetsParFiliere[filiere] || projetsParFiliere[filiere].length === 0) ? (
                   <li style={{color:'#999'}}>Aucun projet soumis</li>
                 ) : (
-                  projetsParFiliere[filiere].map((p, idx) => (
+                  (projetsParFiliere[filiere] || []).map((p, idx) => (
                     <li key={idx} style={{color:'#0057b7'}}>
                       <b>{p.titre}</b><br/>
                       <span style={{fontSize:'0.9em'}}>{p.auteur} — {new Date(p.date).toLocaleDateString()}</span>
@@ -190,11 +196,19 @@ function Home() {
       </section>
       <section style={{margin:'2em auto', maxWidth:'700px', background:'#fff', borderRadius:'12px', padding:'2em', border:'2px solid #ff7900'}}>
         <h2 style={{color:'#ff7900'}}>Événements à venir</h2>
-        <ul style={{color:'#0057b7', fontWeight:'bold'}}>
-          <li>Journée portes ouvertes ENSPD</li>
-          <li>Défense des projets de fin d’études</li>
-          <li>Forum des métiers de l’ingénieur</li>
-        </ul>
+        {events.length === 0 ? (
+          <div style={{color:'#999'}}>Aucun événement à venir.</div>
+        ) : (
+          <ul style={{color:'#0057b7', fontWeight:'bold'}}>
+            {events.map(ev => (
+              <li key={ev.id} style={{marginBottom:'0.8em'}}>
+                <b>{ev.titre}</b> — <span style={{color:'#0057b7'}}>{new Date(ev.date).toLocaleDateString()}</span><br/>
+                <span style={{fontSize:'0.95em', color:'#333'}}><b>Lieu :</b> {ev.lieu}</span><br/>
+                <span style={{fontSize:'0.95em', color:'#333'}}><b>Description :</b> {ev.description}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   )
@@ -243,10 +257,22 @@ function Profile({currentUser}) {
 }
 
 function Forum({currentUser}) {
-  const [messages, setMessages] = useState(() => JSON.parse(localStorage.getItem('forumMessages')) || []);
+  const [messages, setMessages] = useState([]);
   const [texte, setTexte] = useState("");
   const [editIndex, setEditIndex] = useState(null);
   const [message, setMessage] = useState("");
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [replyIndex, setReplyIndex] = useState(null);
+
+  useEffect(() => {
+    fetch(`${API}/api/forum/messages`).then(r=>r.json()).then(setMessages).catch(()=>setMessages([]))
+  }, [])
+  useEffect(() => {
+    const timer = setInterval(() => {
+      fetch(`${API}/api/forum/messages`).then(r=>r.json()).then(setMessages).catch(()=>{})
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [])
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -258,29 +284,37 @@ function Forum({currentUser}) {
       setMessage('Vous devez être connecté pour poster.');
       return;
     }
-    let newMessages = [...messages];
-    const msgObj = {
-      texte,
-      auteur: currentUser.nom,
-      type: currentUser.type,
-      date: new Date().toISOString()
-    };
+    const payload = { texte, auteur: currentUser.nom, type: currentUser.type };
     if (editIndex !== null) {
-      // Seul l'auteur peut éditer
+      const id = messages[editIndex].id;
       if (messages[editIndex].auteur !== currentUser.nom) {
         setMessage('Vous ne pouvez modifier que vos propres messages.');
         return;
       }
-      newMessages[editIndex] = msgObj;
-      setEditIndex(null);
-      setMessage('Message modifié.');
+      fetch(`${API}/api/forum/messages/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texte })
+      }).then(r=>r.ok?r.json():Promise.reject()).then(updated=>{
+        setMessages(messages.map((m,i)=>i===editIndex?updated:m));
+        setEditIndex(null);
+        setMessage('Message modifié.');
+        setTexte("");
+        setReplyIndex(null);
+      }).catch(()=>{})
     } else {
-      newMessages.push(msgObj);
-      setMessage('Message ajouté.');
+      const finalTexte = replyIndex !== null ? `@${messages[replyIndex].auteur}: ${texte}` : texte;
+      fetch(`${API}/api/forum/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, texte: finalTexte })
+      }).then(r=>r.ok?r.json():Promise.reject()).then(created=>{
+        setMessages([...messages, created]);
+        setMessage('Message ajouté.');
+        setTexte("");
+        setReplyIndex(null);
+      }).catch(()=>{})
     }
-    setMessages(newMessages);
-    localStorage.setItem('forumMessages', JSON.stringify(newMessages));
-    setTexte("");
   }
 
   function handleEdit(idx) {
@@ -298,17 +332,29 @@ function Forum({currentUser}) {
       return;
     }
     if (!window.confirm('Confirmer la suppression de ce message ?')) return;
-    const newMessages = messages.filter((_, i) => i !== idx);
-    setMessages(newMessages);
-    localStorage.setItem('forumMessages', JSON.stringify(newMessages));
-    setMessage('Message supprimé.');
-    setTexte("");
-    setEditIndex(null);
+    const id = messages[idx].id;
+    fetch(`${API}/api/forum/messages/${id}`, { method: 'DELETE' })
+      .then(r=>r.ok?r.json():Promise.reject())
+      .then(()=>{
+        const newMessages = messages.filter((_, i) => i !== idx);
+        setMessages(newMessages);
+        setMessage('Message supprimé.');
+        setTexte("");
+        setEditIndex(null);
+      }).catch(()=>{})
   }
 
   return (
     <div style={{maxWidth:'700px', margin:'2em auto'}}>
       <h2 style={{color:'#0057b7'}}>Forum ENSPD</h2>
+      <div style={{marginBottom:'1em', textAlign:'right'}}>
+        <label style={{marginRight:'0.5em', color:'#0057b7'}}>Filtrer</label>
+        <select value={roleFilter} onChange={e=>setRoleFilter(e.target.value)} style={{padding:'0.3em 0.6em'}}>
+          <option value="all">Tous</option>
+          <option value="etudiant">Étudiants</option>
+          <option value="enseignant">Enseignants</option>
+        </select>
+      </div>
       <section style={{background:'#fff', borderRadius:'8px', padding:'1em', border:'2px solid #ff7900', marginBottom:'2em'}}>
         <form onSubmit={handleSubmit}>
           <textarea value={texte} onChange={e=>setTexte(e.target.value)} style={{width:'100%', marginBottom:'1em'}} rows={3} placeholder="Votre message..." required /><br/>
@@ -318,14 +364,19 @@ function Forum({currentUser}) {
       </section>
       <h3 style={{color:'#ff7900'}}>Fil de discussion</h3>
       <ul>
-        {messages.length === 0 ? <div style={{color:'#999'}}>Aucun message pour l'instant.</div> : messages.map((msg, idx) => (
+        {messages.length === 0 ? <div style={{color:'#999'}}>Aucun message pour l'instant.</div> : messages.filter(m => roleFilter === 'all' ? true : m.type === roleFilter).map((msg, idx) => (
           <li key={idx} style={{marginBottom:'1em', background:'#f9f9f9', padding:'1em', borderRadius:'6px', border:'1px solid #eee'}}>
             <span style={{fontWeight:'bold', color:'#0057b7'}}>{msg.auteur} ({msg.type})</span> <span style={{fontSize:'0.9em', color:'#999'}}>{new Date(msg.date).toLocaleString()}</span><br/>
             <span style={{fontSize:'1em', color:'#333'}}>{msg.texte}</span><br/>
-            {currentUser && msg.auteur === currentUser.nom && (
+            {currentUser && (
               <>
-                <button onClick={()=>handleEdit(idx)} style={{marginRight:'1em', background:'#0057b7', color:'#fff', border:'none', borderRadius:'4px', padding:'0.3em 0.8em'}}>Modifier</button>
-                <button onClick={()=>handleDelete(idx)} style={{background:'#ff7900', color:'#fff', border:'none', borderRadius:'4px', padding:'0.3em 0.8em'}}>Supprimer</button>
+                {msg.auteur === currentUser.nom ? (
+                  <>
+                    <button onClick={()=>handleEdit(idx)} style={{marginRight:'1em', background:'#0057b7', color:'#fff', border:'none', borderRadius:'4px', padding:'0.3em 0.8em'}}>Modifier</button>
+                    <button onClick={()=>handleDelete(idx)} style={{marginRight:'1em', background:'#ff7900', color:'#fff', border:'none', borderRadius:'4px', padding:'0.3em 0.8em'}}>Supprimer</button>
+                  </>
+                ) : null}
+                <button onClick={()=>{ setReplyIndex(idx); setTexte(`@${msg.auteur}: `) }} style={{background:'#00a8e8', color:'#fff', border:'none', borderRadius:'4px', padding:'0.3em 0.8em'}}>Répondre</button>
               </>
             )}
           </li>
@@ -340,7 +391,6 @@ function Register() {
   const [nom, setNom] = useState('');
   const [matricule, setMatricule] = useState('');
   const [filiere, setFiliere] = useState(FILIERES[0]);
-  const [mention, setMention] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -351,21 +401,25 @@ function Register() {
 
   function handleSubmit(e) {
     e.preventDefault();
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    if (users.find(u => u.email === email)) {
-      setMessage('Cet email est déjà utilisé.');
-      return;
-    }
-    const user = { type, nom, email, password };
-    if (type === 'etudiant') {
-      user.matricule = matricule;
-      user.filiere = filiere;
-      user.mention = mention;
-    }
-    users.push(user);
-    localStorage.setItem('users', JSON.stringify(users));
-    setMessage('Inscription réussie ! Vous pouvez vous connecter.');
-    setTimeout(() => navigate('/login'), 1500);
+    const payload = type === 'etudiant'
+      ? { type: 'etudiant', nom, email, password, matricule, filiere }
+      : { type: 'enseignant', nom, email, password };
+    fetch(`${API}/api/users/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(async r=>{
+      if (!r.ok) {
+        const d = await r.json().catch(()=>({}))
+        throw new Error(d.message || 'Erreur')
+      }
+      return r.json()
+    }).then(()=>{
+      setMessage('Inscription réussie ! Vous pouvez vous connecter.');
+      setTimeout(() => navigate('/login'), 1500);
+    }).catch(err=>{
+      setMessage(err.message || 'Erreur lors de l’inscription.')
+    })
   }
 
   return (
@@ -379,12 +433,12 @@ function Register() {
             <option value="enseignant">Enseignant</option>
           </select>
         </div>
+        <div style={{marginBottom:'1.2em'}}>
+          <label>Nom</label><br/>
+          <input type="text" style={fieldStyle} required value={nom} onChange={e => setNom(e.target.value)} />
+        </div>
         {type === 'etudiant' && (
           <>
-            <div style={{marginBottom:'1.2em'}}>
-              <label>Nom</label><br/>
-              <input type="text" style={fieldStyle} required value={nom} onChange={e => setNom(e.target.value)} />
-            </div>
             <div style={{marginBottom:'1.2em'}}>
               <label>Matricule</label><br/>
               <input type="text" style={fieldStyle} required value={matricule} onChange={e => setMatricule(e.target.value)} />
@@ -394,10 +448,6 @@ function Register() {
               <select style={fieldStyle} value={filiere} onChange={e => setFiliere(e.target.value)}>
                 {FILIERES.map(f => <option key={f} value={f}>{f}</option>)}
               </select>
-            </div>
-            <div style={{marginBottom:'1.2em'}}>
-              <label>Mention obtenue lors de la soutenance</label><br/>
-              <input type="text" style={fieldStyle} required value={mention} onChange={e => setMention(e.target.value)} />
             </div>
           </>
         )}
@@ -421,7 +471,7 @@ function Register() {
   )
 }
 
-function Login() {
+function Login({ setCurrentUser }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -432,15 +482,24 @@ function Login() {
 
   function handleSubmit(e) {
     e.preventDefault();
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    const user = users.find(u => u.email === email && u.password === password);
-    if (!user) {
-      setMessage('Identifiants incorrects.');
-      return;
-    }
-    localStorage.setItem('currentUser', JSON.stringify(user));
-    setMessage('Connexion réussie !');
-    setTimeout(() => navigate('/'), 1000);
+    const payload = { email, password };
+    fetch(`${API}/api/users/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(async r=>{
+      if (!r.ok) {
+        const d = await r.json().catch(()=>({}))
+        throw new Error(d.message || 'Identifiants incorrects.')
+      }
+      return r.json()
+    }).then(user=>{
+      setCurrentUser(user);
+      setMessage('Connexion réussie !');
+      setTimeout(() => navigate('/'), 1000);
+    }).catch(err=>{
+      setMessage(err.message || 'Identifiants incorrects.')
+    })
   }
 
   return (
@@ -517,7 +576,7 @@ function App() {
 export default App
 
 function GestionEvenements({currentUser}) {
-  const [evenements, setEvenements] = useState(() => JSON.parse(localStorage.getItem('evenements')) || []);
+  const [evenements, setEvenements] = useState([]);
   const [titre, setTitre] = useState("");
   const [date, setDate] = useState("");
   const [lieu, setLieu] = useState("");
@@ -530,28 +589,46 @@ function GestionEvenements({currentUser}) {
     return <div style={{color:'#ff7900', textAlign:'center', marginTop:'2em'}}>Accès réservé aux enseignants ou administrateurs.</div>;
   }
 
+  useEffect(() => {
+    fetch(`${API}/api/events`).then(r=>r.json()).then(setEvenements).catch(()=>setEvenements([]))
+  }, [])
+
   function handleSubmit(e) {
     e.preventDefault();
     if (!titre || !date || !lieu || !description) {
       setMessage('Veuillez remplir tous les champs.');
       return;
     }
-    let newEvenements = [...evenements];
-    const eventObj = { titre, date, lieu, description };
     if (editIndex !== null) {
-      newEvenements[editIndex] = eventObj;
-      setEditIndex(null);
-      setMessage('Événement modifié.');
+      const id = evenements[editIndex].id;
+      fetch(`${API}/api/events/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titre, date, lieu, description })
+      }).then(r=>r.ok?r.json():Promise.reject()).then(updated=>{
+        setEvenements(evenements.map((ev,i)=>i===editIndex?updated:ev));
+        setEditIndex(null);
+        setMessage('Événement modifié.');
+        setTitre("");
+        setDate("");
+        setLieu("");
+        setDescription("");
+      }).catch(()=>{})
     } else {
-      newEvenements.push(eventObj);
-      setMessage('Événement ajouté.');
+      const payload = { titre, date, lieu, description };
+      fetch(`${API}/api/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(r=>r.ok?r.json():Promise.reject()).then(created=>{
+        setEvenements([...evenements, created]);
+        setMessage('Événement ajouté.');
+        setTitre("");
+        setDate("");
+        setLieu("");
+        setDescription("");
+      }).catch(()=>{})
     }
-    setEvenements(newEvenements);
-    localStorage.setItem('evenements', JSON.stringify(newEvenements));
-    setTitre("");
-    setDate("");
-    setLieu("");
-    setDescription("");
   }
 
   function handleEdit(idx) {
@@ -564,15 +641,19 @@ function GestionEvenements({currentUser}) {
 
   function handleDelete(idx) {
     if (!window.confirm('Confirmer la suppression de cet événement ?')) return;
-    const newEvenements = evenements.filter((_, i) => i !== idx);
-    setEvenements(newEvenements);
-    localStorage.setItem('evenements', JSON.stringify(newEvenements));
-    setMessage('Événement supprimé.');
-    setTitre("");
-    setDate("");
-    setLieu("");
-    setDescription("");
-    setEditIndex(null);
+    const id = evenements[idx].id;
+    fetch(`${API}/api/events/${id}`, { method: 'DELETE' })
+      .then(r=>r.ok?r.json():Promise.reject())
+      .then(()=>{
+        const newEvenements = evenements.filter((_, i) => i !== idx);
+        setEvenements(newEvenements);
+        setMessage('Événement supprimé.');
+        setTitre("");
+        setDate("");
+        setLieu("");
+        setDescription("");
+        setEditIndex(null);
+      }).catch(()=>{})
   }
 
   return (
@@ -612,19 +693,26 @@ function ResetPassword() {
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState("");
   const navigate = useNavigate();
+  const fieldStyle = {width:'100%', fontSize:'1.1em', padding:'0.7em', boxSizing:'border-box'};
 
   function handleSubmit(e) {
     e.preventDefault();
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    const idx = users.findIndex(u => u.email === email);
-    if (idx === -1) {
-      setMessage("Aucun utilisateur trouvé avec cet email.");
-      return;
-    }
-    users[idx].password = newPassword;
-    localStorage.setItem('users', JSON.stringify(users));
-    setMessage("Mot de passe réinitialisé ! Vous pouvez vous connecter.");
-    setTimeout(() => navigate('/login'), 1500);
+    fetch(`${API}/api/users/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, newPassword })
+    }).then(async r=>{
+      if (!r.ok) {
+        const d = await r.json().catch(()=>({}))
+        throw new Error(d.message || 'Erreur lors de la réinitialisation.')
+      }
+      return r.json()
+    }).then(()=>{
+      setMessage("Mot de passe réinitialisé ! Vous pouvez vous connecter.");
+      setTimeout(() => navigate('/login'), 1500);
+    }).catch(err=>{
+      setMessage(err.message || "Erreur lors de la réinitialisation.")
+    })
   }
 
   return (
@@ -633,12 +721,12 @@ function ResetPassword() {
       <form onSubmit={handleSubmit}>
         <div style={{marginBottom:'1.2em'}}>
           <label>Email</label><br/>
-          <input type="email" style={{width:'100%', fontSize:'1.1em', padding:'0.7em'}} required value={email} onChange={e => setEmail(e.target.value)} />
+          <input type="email" style={fieldStyle} required value={email} onChange={e => setEmail(e.target.value)} />
         </div>
         <div style={{marginBottom:'1.2em'}}>
           <label>Nouveau mot de passe</label><br/>
           <div style={{position:'relative'}}>
-            <input type={showPassword ? 'text' : 'password'} style={{width:'100%', fontSize:'1.1em', padding:'0.7em', paddingRight:'2.5em'}} required value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+            <input type={showPassword ? 'text' : 'password'} style={{...fieldStyle, paddingRight:'2.5em'}} required value={newPassword} onChange={e => setNewPassword(e.target.value)} />
             <button type="button" onClick={()=>setShowPassword(v=>!v)} style={{position:'absolute', right:'8px', top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:'1.3em'}}>
               {showPassword ? '🙈' : '👁️'}
             </button>
